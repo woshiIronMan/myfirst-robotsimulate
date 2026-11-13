@@ -1,0 +1,379 @@
+<?xml version="1.0"?>
+<!--
+  C26 智能底盘车（四轮麦克纳姆轮）仿真模型
+  尺寸来源：
+    - 底板外形 280 x 155 mm  ← 07.图纸资料/二维CAD图纸/C26底板240712.dxf
+    - 麦轮直径 65 mm / 520 霍尔编码器电机  ← C26四轮底盘车使用手册 1.4 产品规格与参数
+    - 层间距 45 mm（双层车）
+  坐标系：x 前进，y 左，z 上。base_footprint 贴地。
+-->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="c26_car">
+
+  <!-- ================= 可调参数 ================= -->
+  <xacro:arg name="prefix" default=""/>
+  <xacro:arg name="upper_plate" default="true"/>   <!-- 是否带第二层板 -->
+  <xacro:arg name="lidar" default="false"/>
+  <xacro:arg name="planar_drive" default="false"/> <!-- 是否启用整机平面速度驱动 -->
+
+  <!-- planar 模式：车体速度由 Gazebo 直接给定，轮子只为外观服务。
+       此时去掉滚子碰撞、轮子摩擦调到≈0，既省算力又让横移/自转接近理论值。 -->
+  <xacro:property name="planar_on" value="${'$(arg planar_drive)' == 'true'}"/>
+  <xacro:property name="wheel_collision" value="${not planar_on}"/>
+  <xacro:property name="wheel_mu" value="${0.02 if planar_on else 1.0}"/>
+
+  <xacro:property name="prefix" value="$(arg prefix)"/>
+
+  <!-- 底板 -->
+  <xacro:property name="plate_len" value="0.280"/>
+  <xacro:property name="plate_wid" value="0.155"/>
+  <xacro:property name="plate_thk" value="0.003"/>
+  <xacro:property name="plate_bottom" value="0.048"/>   <!-- 底板下表面高度 -->
+  <xacro:property name="layer_gap" value="0.045"/>      <!-- 层间距 -->
+
+  <!-- 麦轮 -->
+  <xacro:property name="wheel_r" value="0.0325"/>
+  <xacro:property name="wheel_w" value="0.038"/>
+  <xacro:property name="roller_r" value="0.009"/>
+  <xacro:property name="roller_n" value="8"/>
+  <xacro:property name="roller_len" value="0.034"/>
+  <xacro:property name="rim_r" value="${wheel_r - roller_r}"/>
+  <!-- 轮毂半径必须小于 rim_r，只让滚子接触地面，否则麦轮退化成普通轮 -->
+  <xacro:property name="hub_r" value="${rim_r - roller_r}"/>
+
+  <!-- 轮距 / 轴距 -->
+  <xacro:property name="wheel_x" value="0.105"/>
+  <xacro:property name="wheel_y" value="0.1035"/>
+  <xacro:property name="wheel_z" value="${wheel_r}"/>
+
+  <!-- 质量 -->
+  <xacro:property name="mass_plate" value="0.35"/>
+  <xacro:property name="mass_battery" value="0.45"/>
+  <xacro:property name="mass_motor" value="0.152"/>
+  <xacro:property name="mass_wheel" value="0.060"/>
+  <xacro:property name="mass_board" value="0.050"/>
+
+  <!-- ================= 惯性宏 ================= -->
+  <xacro:macro name="box_inertial" params="mass x y z">
+    <inertial>
+      <mass value="${mass}"/>
+      <inertia ixx="${mass*(y*y+z*z)/12.0}" ixy="0" ixz="0"
+               iyy="${mass*(x*x+z*z)/12.0}" iyz="0"
+               izz="${mass*(x*x+y*y)/12.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="cyl_inertial" params="mass r h">
+    <inertial>
+      <mass value="${mass}"/>
+      <inertia ixx="${mass*(3*r*r+h*h)/12.0}" ixy="0" ixz="0"
+               iyy="${mass*(3*r*r+h*h)/12.0}" iyz="0"
+               izz="${mass*r*r/2.0}"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- ================= 材质 ================= -->
+  <material name="alu"><color rgba="0.75 0.78 0.82 1"/></material>
+  <material name="brass"><color rgba="0.72 0.50 0.22 1"/></material>
+  <material name="black"><color rgba="0.09 0.09 0.10 1"/></material>
+  <material name="rubber"><color rgba="0.12 0.12 0.13 1"/></material>
+  <material name="wheel_grey"><color rgba="0.30 0.32 0.35 1"/></material>
+  <material name="pcb"><color rgba="0.05 0.30 0.18 1"/></material>
+  <material name="batt"><color rgba="0.10 0.20 0.55 1"/></material>
+
+  <!-- 来自 C26底板240712.dxf，按原轮廓和孔位挤出，网格坐标单位为米。 -->
+  <xacro:macro name="c26_plate_visual">
+    <visual>
+      <geometry><mesh filename="package://c26_car_description/meshes/c26_base_plate.stl"/></geometry>
+      <material name="alu"/>
+    </visual>
+  </xacro:macro>
+
+  <!-- ================= 根 ================= -->
+  <link name="${prefix}base_footprint"/>
+
+  <joint name="${prefix}base_joint" type="fixed">
+    <parent link="${prefix}base_footprint"/>
+    <child link="${prefix}base_link"/>
+    <origin xyz="0 0 ${plate_bottom + plate_thk/2}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- 底板 -->
+  <link name="${prefix}base_link">
+    <xacro:c26_plate_visual/>
+    <collision>
+      <geometry><box size="${plate_len} ${plate_wid} ${plate_thk}"/></geometry>
+    </collision>
+    <xacro:box_inertial mass="${mass_plate}" x="${plate_len}" y="${plate_wid}" z="${plate_thk}"/>
+  </link>
+
+  <!-- ================= 电池 / 控制板 ================= -->
+  <link name="${prefix}battery_link">
+    <visual>
+      <origin xyz="0 0 0"/>
+      <geometry><box size="0.135 0.046 0.024"/></geometry>
+      <material name="batt"/>
+    </visual>
+    <collision><geometry><box size="0.135 0.046 0.024"/></geometry></collision>
+    <xacro:box_inertial mass="${mass_battery}" x="0.135" y="0.046" z="0.024"/>
+  </link>
+  <joint name="${prefix}battery_joint" type="fixed">
+    <parent link="${prefix}base_link"/>
+    <child link="${prefix}battery_link"/>
+    <origin xyz="-0.045 0.000 ${plate_thk/2 + 0.012}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="${prefix}mcu_link">
+    <visual>
+      <geometry><box size="0.070 0.055 0.008"/></geometry>
+      <material name="pcb"/>
+    </visual>
+    <collision><geometry><box size="0.070 0.055 0.008"/></geometry></collision>
+    <xacro:box_inertial mass="${mass_board}" x="0.070" y="0.055" z="0.008"/>
+  </link>
+  <joint name="${prefix}mcu_joint" type="fixed">
+    <parent link="${prefix}base_link"/>
+    <child link="${prefix}mcu_link"/>
+    <origin xyz="0.075 0.000 ${plate_thk/2 + 0.004}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ================= 第二层板 + 支撑柱 ================= -->
+  <xacro:if value="$(arg upper_plate)">
+    <xacro:property name="upper_z" value="${plate_bottom + plate_thk + layer_gap + plate_thk/2}"/>
+
+    <link name="${prefix}upper_plate_link">
+      <xacro:c26_plate_visual/>
+      <collision><geometry><box size="${plate_len} ${plate_wid} ${plate_thk}"/></geometry></collision>
+      <xacro:box_inertial mass="${mass_plate}" x="${plate_len}" y="${plate_wid}" z="${plate_thk}"/>
+    </link>
+    <joint name="${prefix}upper_plate_joint" type="fixed">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}upper_plate_link"/>
+      <origin xyz="0 0 ${layer_gap}" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 4 根 45mm 铜柱 -->
+    <xacro:macro name="standoff" params="name x y">
+      <link name="${prefix}${name}">
+        <visual>
+          <geometry><cylinder radius="0.003" length="${layer_gap}"/></geometry>
+          <material name="brass"/>
+        </visual>
+        <collision><geometry><cylinder radius="0.003" length="${layer_gap}"/></geometry></collision>
+        <xacro:cyl_inertial mass="0.008" r="0.003" h="${layer_gap}"/>
+      </link>
+      <joint name="${prefix}${name}_joint" type="fixed">
+        <parent link="${prefix}base_link"/>
+        <child link="${prefix}${name}"/>
+        <origin xyz="${x} ${y} ${layer_gap/2}" rpy="0 0 0"/>
+      </joint>
+    </xacro:macro>
+
+    <xacro:standoff name="post_fl" x="${plate_len/2 - 0.012}" y="${plate_wid/2 - 0.012}"/>
+    <xacro:standoff name="post_fr" x="${plate_len/2 - 0.012}" y="${-(plate_wid/2 - 0.012)}"/>
+    <xacro:standoff name="post_rl" x="${-(plate_len/2 - 0.012)}" y="${plate_wid/2 - 0.012}"/>
+    <xacro:standoff name="post_rr" x="${-(plate_len/2 - 0.012)}" y="${-(plate_wid/2 - 0.012)}"/>
+
+    <!-- 顶板上的 OpenMV 摄像头支架（后续视觉仿真用） -->
+    <link name="${prefix}camera_link">
+      <visual>
+        <geometry><box size="0.045 0.032 0.020"/></geometry>
+        <material name="black"/>
+      </visual>
+      <collision><geometry><box size="0.045 0.032 0.020"/></geometry></collision>
+      <xacro:box_inertial mass="0.020" x="0.045" y="0.032" z="0.020"/>
+    </link>
+    <joint name="${prefix}camera_joint" type="fixed">
+      <parent link="${prefix}upper_plate_link"/>
+      <child link="${prefix}camera_link"/>
+      <origin xyz="0.105 0 ${plate_thk/2 + 0.024}" rpy="0 0 -0.30"/>
+    </joint>
+  </xacro:if>
+
+  <xacro:if value="$(arg lidar)">
+    <link name="${prefix}lidar_link">
+      <visual>
+        <geometry><cylinder radius="0.027" length="0.022"/></geometry>
+        <material name="black"/>
+      </visual>
+    </link>
+    <joint name="${prefix}lidar_joint" type="fixed">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}lidar_link"/>
+      <origin xyz="0 0 0.105"/>
+    </joint>
+    <gazebo reference="${prefix}lidar_link">
+      <sensor name="c26_lidar" type="gpu_lidar">
+        <frame_id>${prefix}lidar_link</frame_id>
+        <topic>/c26/scan</topic>
+        <always_on>true</always_on>
+        <update_rate>8</update_rate>
+        <lidar>
+          <scan><horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-${pi}</min_angle>
+            <max_angle>${pi}</max_angle>
+          </horizontal></scan>
+          <range><min>0.06</min><max>7.0</max><resolution>0.01</resolution></range>
+        </lidar>
+      </sensor>
+    </gazebo>
+  </xacro:if>
+
+  <!-- ================= 麦轮 ================= -->
+  <!--
+    每个麦轮 = 轮毂(圆柱) + N 个 45° 斜置滚子(圆柱)。
+    滚子轴线与轮轴成 45°，是麦轮能横移的物理来源；
+    滚子 rpy = (mirror * -pi/4, theta, 0)，theta 为轮缘圆周角。
+  -->
+  <xacro:macro name="roller_ring" params="wheel mirror i n">
+    <xacro:if value="${i &lt; n}">
+      <xacro:property name="theta" value="${2*pi*i/n}"/>
+      <xacro:property name="alpha" value="${(0.0 if mirror &gt; 0 else pi/2) - pi/4}"/>
+      <!-- 滚子必须是自由自转的关节，否则麦轮退化成带齿的普通轮，无法横移 -->
+      <link name="${wheel}_roller_${i}">
+        <visual>
+          <geometry><cylinder radius="${roller_r}" length="${roller_len}"/></geometry>
+          <material name="rubber"/>
+        </visual>
+        <!-- planar 模式下不需要滚子碰撞（节省大量接触计算，GUI 才跑得动） -->
+        <xacro:if value="${not wheel_collision}">
+          <collision>
+            <geometry><cylinder radius="${roller_r}" length="${roller_len}"/></geometry>
+          </collision>
+        </xacro:if>
+        <xacro:cyl_inertial mass="0.003" r="${roller_r}" h="${roller_len}"/>
+      </link>
+      <joint name="${wheel}_roller_${i}_joint" type="continuous">
+        <parent link="${wheel}"/>
+        <child link="${wheel}_roller_${i}"/>
+        <origin xyz="${rim_r*cos(theta)} 0 ${rim_r*sin(theta)}" rpy="${alpha} ${theta} 0"/>
+        <axis xyz="0 0 1"/>
+        <dynamics damping="0.0005" friction="0.0"/>
+      </joint>
+      <xacro:roller_ring wheel="${wheel}" mirror="${mirror}" i="${i+1}" n="${n}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <xacro:macro name="mecanum_wheel" params="name x y mirror">
+    <!-- mirror = +1: 左侧(y>0) 滚子斜向 +45°，-1: 右侧 -->
+    <link name="${prefix}${name}">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="${hub_r}" length="${wheel_w}"/></geometry>
+        <material name="wheel_grey"/>
+      </visual>
+      <xacro:if value="${wheel_collision}">
+        <!-- 接触模式：用缩小的轮毂，让滚子着地 -->
+        <collision>
+          <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+          <geometry><cylinder radius="${hub_r}" length="${wheel_w}"/></geometry>
+        </collision>
+      </xacro:if>
+      <xacro:unless value="${wheel_collision}">
+        <!-- planar 模式：整圆轮子只负责把车撑起来（摩擦≈0，不阻碍滑移） -->
+        <collision>
+          <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+          <geometry><cylinder radius="${wheel_r}" length="${wheel_w}"/></geometry>
+        </collision>
+      </xacro:unless>
+      <xacro:cyl_inertial mass="${mass_wheel}" r="${wheel_r}" h="${wheel_w}"/>
+    </link>
+
+    <joint name="${prefix}${name}_joint" type="continuous">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}${name}"/>
+      <origin xyz="${x} ${y} ${wheel_z - (plate_bottom + plate_thk/2)}" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.02" friction="0.0"/>
+      <limit effort="2.0" velocity="40.0"/>
+    </joint>
+
+    <xacro:roller_ring wheel="${prefix}${name}" mirror="${mirror}" i="0" n="${roller_n}"/>
+
+    <!-- 520 电机（外观件，与底板固连） -->
+    <link name="${prefix}${name}_motor">
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry><cylinder radius="0.0125" length="0.050"/></geometry>
+        <material name="black"/>
+      </visual>
+      <xacro:cyl_inertial mass="${mass_motor}" r="0.0125" h="0.050"/>
+    </link>
+    <joint name="${prefix}${name}_motor_joint" type="fixed">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}${name}_motor"/>
+      <origin xyz="${x} ${y - mirror*0.048} ${wheel_z - (plate_bottom + plate_thk/2)}" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 速度控制（每个轮子一个独立 topic） -->
+    <gazebo>
+      <plugin filename="gz-sim-joint-controller-system"
+              name="gz::sim::systems::JointController">
+        <joint_name>${prefix}${name}_joint</joint_name>
+        <use_velocity_commands>true</use_velocity_commands>
+        <topic>/${prefix}${name}/cmd_vel</topic>
+      </plugin>
+    </gazebo>
+
+    <gazebo reference="${prefix}${name}">
+      <mu1>${wheel_mu}</mu1>
+      <mu2>${wheel_mu}</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+      <minDepth>0.0005</minDepth>
+      <maxVel>0.1</maxVel>
+    </gazebo>
+
+    <gazebo reference="${prefix}${name}_roller_0"><mu1>1.2</mu1><mu2>1.2</mu2></gazebo>
+  </xacro:macro>
+
+  <!--
+    左右分组：左侧两轮滚子斜向相同，右侧两轮相反。
+    实测这套布置下「前进/后退/原地旋转」与 /cmd_vel 的麦轮解算一致。
+  -->
+  <xacro:mecanum_wheel name="wheel_fl" x="${wheel_x}"  y="${wheel_y}"  mirror="1"/>
+  <xacro:mecanum_wheel name="wheel_fr" x="${wheel_x}"  y="${-wheel_y}" mirror="-1"/>
+  <xacro:mecanum_wheel name="wheel_rl" x="${-wheel_x}" y="${wheel_y}"  mirror="1"/>
+  <xacro:mecanum_wheel name="wheel_rr" x="${-wheel_x}" y="${-wheel_y}" mirror="-1"/>
+
+  <!-- ================= 整车 Gazebo 插件 ================= -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <topic>/model/c26/joint_state</topic>
+    </plugin>
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_footprint</robot_base_frame>
+      <odom_topic>/model/c26/odometry</odom_topic>
+      <dimensions>2</dimensions>
+      <odom_publish_frequency>30</odom_publish_frequency>
+    </plugin>
+    <plugin filename="gz-sim-pose-publisher-system"
+            name="gz::sim::systems::PosePublisher">
+      <publish_link_pose>true</publish_link_pose>
+      <publish_pose>true</publish_pose>
+      <publish_visual_pose>false</publish_visual_pose>
+      <publish_sensor_pose>false</publish_sensor_pose>
+      <use_pose_vector_msg>false</use_pose_vector_msg>
+      <static_publisher>true</static_publisher>
+      <update_frequency>30</update_frequency>
+    </plugin>
+  </gazebo>
+
+  <!--
+    平面速度驱动（可选）：planar_drive:=true 时由 Gazebo 直接给车体设定平面速度，
+    横移/原地旋转与真实麦轮运动学完全一致；轮子仍按解算转速转动（纯视觉）。
+    适合测试巡线、视觉、导航等上层逻辑。
+  -->
+  <xacro:if value="$(arg planar_drive)">
+    <gazebo>
+      <plugin filename="gz-sim-velocity-control-system"
+              name="gz::sim::systems::VelocityControl">
+        <topic>/model/c26/cmd_vel_planar</topic>
+      </plugin>
+    </gazebo>
+  </xacro:if>
+</robot>

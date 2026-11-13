@@ -1,0 +1,82 @@
+<?xml version="1.0" ?>
+<!-- C26 测试场地：地面 + 光照 + 几个参照物，方便观察整车运动 -->
+<sdf version="1.10">
+  <world name="c26_arena">
+
+    <!-- GUI 打开时的初始机位：斜上方看原点，保证一打开就能看到小车 -->
+    <gui fullscreen="false">
+      <camera name="car_view">
+        <pose>0.8 -0.8 0.45 0 -0.378 2.356</pose>
+      </camera>
+    </gui>
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <direction>-0.4 0.3 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>40 40</size></plane></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>40 40</size></plane></geometry>
+          <material>
+            <ambient>0.55 0.57 0.60 1</ambient>
+            <diffuse>0.62 0.64 0.67 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 参考方块：便于观察是否横移 / 旋转 -->
+    <model name="ref_box_a">
+      <static>true</static>
+      <pose>1.0 0.0 0.1 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.2 0.2 0.2</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.2 0.2 0.2</size></box></geometry>
+          <material>
+            <ambient>0.85 0.25 0.20 1</ambient>
+            <diffuse>0.90 0.30 0.25 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="ref_box_b">
+      <static>true</static>
+      <pose>1.0 1.0 0.1 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>0.2 0.2 0.2</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>0.2 0.2 0.2</size></box></geometry>
+          <material>
+            <ambient>0.20 0.45 0.85 1</ambient>
+            <diffuse>0.25 0.50 0.90 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>

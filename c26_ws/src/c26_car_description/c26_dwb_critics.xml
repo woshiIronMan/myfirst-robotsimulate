@@ -1,0 +1,5 @@
+<library path="c26_dwb_critics">
+  <class type="c26_car_description::CardinalMotionCritic" base_class_type="dwb_core::TrajectoryCritic">
+    <description>Allows longitudinal travel with steering, straight strafing, and rotation in place.</description>
+  </class>
+</library>

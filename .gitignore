@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+/c26_ws/build/
+/c26_ws/install/
+/c26_ws/log/
+/c26_ws/c26_src.tar.gz
+/tools/_manual.txt
+/tools/manual_pages/
+/tools/shots/
+/tools/pose.txt
+/tools/scene.txt
